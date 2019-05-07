@@ -12,20 +12,43 @@ import (
 func main() {
 
 	filePath := os.Args[1]
-	output := os.Args[2]
+
+	pipeline := make(chan string)
+	fanIn := make(chan []string)
+
+	spinupWorkers(20, pipeline, fanIn)
+
+	go func() {
+		for result := range fanIn {
+			writeToFile(result[1], result[0])
+		}
+	}()
 
 	err := filepath.Walk(filePath, func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
-			md5Sum, _ := md5File(path)
-			fmt.Println(md5Sum, path)
-			if err := writeToFile(path, md5Sum, output); err != nil {
-				panic(err)
-			}
+			pipeline <- path
 		}
 		return nil
 	})
+
+	close(pipeline)
+
 	if err != nil {
 		panic(err)
+	}
+
+}
+
+func spinupWorkers(count int, pipeline <-chan string, fanIn chan<- []string) {
+	for i := 0; i < count; i++ {
+		go func(workerId int) {
+			fmt.Printf("Worker #%d is ready to receive jobs...\n", workerId)
+			for filePath := range pipeline {
+				md5Sum, _ := md5File(filePath)
+				fmt.Println(md5Sum, filePath)
+				fanIn <- []string{md5Sum, filePath}
+			}
+		}(i)
 	}
 }
 
