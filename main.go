@@ -7,23 +7,33 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 func main() {
 
 	filePath := os.Args[1]
-	output := os.Args[0]
-
-	pipeline := make(chan string)
+	output := os.Args[2]
 
 	fanIn := make(chan []string)
-
-	spinupWorkers(20, pipeline, fanIn)
+	writeDone := make(chan struct{})
 
 	go func() {
 		for result := range fanIn {
 			writeToFile(result[1], result[0], output)
 		}
+		writeDone <- struct{}{}
+	}()
+
+	wg := &sync.WaitGroup{}
+
+	pipeline := make(chan string)
+
+	spinupWorkers(20, pipeline, fanIn, wg)
+
+	go func() {
+		wg.Wait()
+		close(fanIn)
 	}()
 
 	err := filepath.Walk(filePath, func(path string, info os.FileInfo, err error) error {
@@ -39,16 +49,24 @@ func main() {
 		panic(err)
 	}
 
+	<-writeDone
 }
 
-func spinupWorkers(count int, pipeline <-chan string, fanIn chan<- []string) {
+func spinupWorkers(count int, pipeline <-chan string, fanIn chan<- []string, wg *sync.WaitGroup) {
 	for i := 0; i < count; i++ {
+
+		wg.Add(1) // add 1 to the WaitGroup counter
+
 		go func(workerId int) {
+
 			fmt.Printf("Worker #%d is ready to receive jobs...\n", workerId)
+
 			for filePath := range pipeline {
 				md5Sum, _ := md5File(filePath)
 				fanIn <- []string{md5Sum, filePath}
 			}
+
+			wg.Done() // signal that the worker is done
 		}(i)
 	}
 }
