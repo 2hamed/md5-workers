@@ -12,15 +12,17 @@ import (
 func main() {
 
 	filePath := os.Args[1]
+	output := os.Args[0]
 
 	pipeline := make(chan string)
+
 	fanIn := make(chan []string)
 
 	spinupWorkers(20, pipeline, fanIn)
 
 	go func() {
 		for result := range fanIn {
-			writeToFile(result[1], result[0])
+			writeToFile(result[1], result[0], output)
 		}
 	}()
 
@@ -45,7 +47,6 @@ func spinupWorkers(count int, pipeline <-chan string, fanIn chan<- []string) {
 			fmt.Printf("Worker #%d is ready to receive jobs...\n", workerId)
 			for filePath := range pipeline {
 				md5Sum, _ := md5File(filePath)
-				fmt.Println(md5Sum, filePath)
 				fanIn <- []string{md5Sum, filePath}
 			}
 		}(i)
