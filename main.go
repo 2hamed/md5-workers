@@ -19,8 +19,18 @@ func main() {
 	writeDone := make(chan struct{})
 
 	go func() {
+		cache := make([][]string, 0)
 		for result := range fanIn {
-			writeToFile(result[1], result[0], output)
+			cache = append(cache, result)
+
+			if len(cache) >= 1000 {
+				writeToFile(cache, output)
+				cache = nil
+			}
+		}
+		if len(cache) > 0 {
+			writeToFile(cache, output)
+			cache = nil
 		}
 		writeDone <- struct{}{}
 	}()
@@ -88,7 +98,7 @@ func md5File(filePath string) (string, error) {
 	return string(hex.EncodeToString(checksum)), nil
 }
 
-func writeToFile(filePath, md5sum, output string) error {
+func writeToFile(lines [][]string, output string) error {
 
 	file, err := os.OpenFile(output, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0755)
 	if err != nil {
@@ -97,7 +107,9 @@ func writeToFile(filePath, md5sum, output string) error {
 
 	defer file.Close()
 
-	file.WriteString(fmt.Sprintf("%s %s\n", md5sum, filePath))
+	for _, l := range lines {
+		file.WriteString(fmt.Sprintf("%s %s\n", l[0], l[1]))
+	}
 
 	return file.Sync()
 }
